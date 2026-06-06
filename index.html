@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Megamania Remake</title>
+    <!-- Fonte retro arcade 8-bit -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="gameContainer">
+        <!-- Canvas principal do jogo -->
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+
+        <!-- UI: Tela Inicial -->
+        <div id="startScreen" class="overlay">
+            <h1 class="glow-text">MEGAMANIA</h1>
+            <h2 class="glow-text-cyan">REMAKE</h2>
+            <div class="instructions">
+                <p>Controles (Teclado):</p>
+                <ul>
+                    <li><span class="key">←</span> / <span class="key">A</span> : Esquerda</li>
+                    <li><span class="key">→</span> / <span class="key">D</span> : Direita</li>
+                    <li><span class="key">Espaço</span> : Disparar</li>
+                </ul>
+                <p class="mobile-note">Dispositivos móveis: Use o controle tátil virtual abaixo.</p>
+            </div>
+            <button id="startButton" class="arcade-button">INICIAR JOGO</button>
+        </div>
+
+        <!-- UI: Tela de Game Over -->
+        <div id="gameOverScreen" class="overlay hidden">
+            <h1 class="glow-text-red">FIM DE JOGO</h1>
+            <p class="final-score-text">PONTOS: <span id="finalScore">0</span></p>
+            <p class="final-level-text">NÍVEL ALCANÇADO: <span id="finalLevel">1</span></p>
+            <button id="restartButton" class="arcade-button button-red">JOGAR NOVAMENTE</button>
+        </div>
+
+        <!-- UI: Tela de Vitória -->
+        <div id="gameWinScreen" class="overlay hidden">
+            <h1 class="glow-text-gold">PARABÉNS!</h1>
+            <h2 class="glow-text-cyan">VOCÊ DEFENDEU O ESPAÇO</h2>
+            <p class="final-score-text">PONTOS TOTAIS: <span id="winScore">0</span></p>
+            <button id="winRestartButton" class="arcade-button button-gold">JOGAR NOVAMENTE</button>
+        </div>
+    </div>
+
+    <!-- Controles virtuais na tela para celular/toque (mobile) -->
+    <div id="mobileControls" class="hidden">
+        <div class="dpad">
+            <button id="btnLeft" class="control-btn">←</button>
+            <button id="btnRight" class="control-btn">→</button>
+        </div>
+        <div class="action-btn-container">
+            <button id="btnFire" class="control-btn fire-btn">FOGO</button>
+        </div>
+    </div>
+
+    <!-- Script de lógica do jogo -->
+    <script src="game.js"></script>
+</body>
+</html>
