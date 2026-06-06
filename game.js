@@ -19,6 +19,7 @@ let level = 1;
 let lives = 3;
 let energy = 100; // Porcentagem: 0 a 100
 let lastTime = 0;
+let joystickInputX = 0; // Controle horizontal do joystick analógico móvel
 
 // Entidades
 let player = null;
@@ -398,9 +399,9 @@ window.addEventListener('keyup', (e) => {
     }
 });
 
-// Detecção de Dispositivos Móveis/Touch
+// Detecção de Dispositivos Móveis/Touch e Telas Estreitas
 function checkTouchDevice() {
-    const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || (navigator.msMaxTouchPoints > 0);
+    const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || (window.innerWidth <= 820);
     const mobileControls = document.getElementById('mobileControls');
     
     if (isTouch) {
@@ -412,45 +413,72 @@ function checkTouchDevice() {
     }
 }
 
-// Ouvintes dos Botões Virtuais Móveis
-const btnLeft = document.getElementById('btnLeft');
-const btnRight = document.getElementById('btnRight');
+// Desbloquear contexto de áudio em qualquer interação na página (mobile)
+window.addEventListener('click', initAudio, { once: true });
+window.addEventListener('touchstart', initAudio, { once: true });
+
+// Ouvintes do Manche Virtual (Joystick) e do Botão de Disparo
+const joystickBase = document.getElementById('joystickBase');
+const joystickStick = document.getElementById('joystickStick');
 const btnFire = document.getElementById('btnFire');
 
-if (btnLeft) {
-    btnLeft.addEventListener('touchstart', (e) => {
-        e.preventDefault();
-        keys.left = true;
-        initAudio();
-    });
-    btnLeft.addEventListener('touchend', (e) => {
-        e.preventDefault();
-        keys.left = false;
-    });
-}
+let joystickActive = false;
+let joystickStartX = 0;
+const joystickMaxRadius = 40; // Pixels máximos de deslocamento do manche
 
-if (btnRight) {
-    btnRight.addEventListener('touchstart', (e) => {
+if (joystickBase && joystickStick) {
+    joystickBase.addEventListener('pointerdown', (e) => {
         e.preventDefault();
-        keys.right = true;
         initAudio();
+        joystickActive = true;
+        joystickStartX = e.clientX;
+        joystickBase.setPointerCapture(e.pointerId);
     });
-    btnRight.addEventListener('touchend', (e) => {
+
+    joystickBase.addEventListener('pointermove', (e) => {
+        if (!joystickActive) return;
         e.preventDefault();
-        keys.right = false;
+        const dx = e.clientX - joystickStartX;
+        
+        // Limitar deslocamento ao raio do manche
+        const limitedDx = Math.max(-joystickMaxRadius, Math.min(joystickMaxRadius, dx));
+        
+        // Mover visualmente o manche apenas na horizontal
+        joystickStick.style.transform = `translate(${limitedDx}px, 0px)`;
+        
+        // Calcular o valor de entrada normalizado (-1.0 a 1.0)
+        joystickInputX = limitedDx / joystickMaxRadius;
     });
+
+    const endJoystick = (e) => {
+        if (!joystickActive) return;
+        e.preventDefault();
+        joystickActive = false;
+        joystickStick.style.transform = 'translate(0px, 0px)';
+        joystickInputX = 0;
+        try {
+            joystickBase.releasePointerCapture(e.pointerId);
+        } catch (err) {}
+    };
+
+    joystickBase.addEventListener('pointerup', endJoystick);
+    joystickBase.addEventListener('pointercancel', endJoystick);
 }
 
 if (btnFire) {
-    btnFire.addEventListener('touchstart', (e) => {
+    btnFire.addEventListener('pointerdown', (e) => {
         e.preventDefault();
         keys.space = true;
         initAudio();
     });
-    btnFire.addEventListener('touchend', (e) => {
+    
+    const endFire = (e) => {
         e.preventDefault();
         keys.space = false;
-    });
+    };
+    
+    btnFire.addEventListener('pointerup', endFire);
+    btnFire.addEventListener('pointercancel', endFire);
 }
 
 // ==========================================
@@ -473,12 +501,16 @@ class Player {
     }
 
     update(deltaTime) {
-        // Movimentação com física/aceleração
-        if (keys.left) {
-            this.vx -= this.speed * deltaTime;
-        }
-        if (keys.right) {
-            this.vx += this.speed * deltaTime;
+        // Movimentação com física/aceleração (analógico móvel ou teclado)
+        if (joystickInputX !== 0) {
+            this.vx += this.speed * joystickInputX * deltaTime;
+        } else {
+            if (keys.left) {
+                this.vx -= this.speed * deltaTime;
+            }
+            if (keys.right) {
+                this.vx += this.speed * deltaTime;
+            }
         }
 
         // Aplicar atrito/desaceleração
