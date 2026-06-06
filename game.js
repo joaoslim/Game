@@ -4,204 +4,184 @@
 
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
-
-// Desabilitar suavização de imagem para preservar o visual pixel art nítido
 ctx.imageSmoothingEnabled = false;
 
-// Dimensões lógicas do jogo (proporção 4:3 clássica)
-const LOGICAL_WIDTH = 800;
+const LOGICAL_WIDTH  = 800;
 const LOGICAL_HEIGHT = 600;
 
-// Estado do Jogo
-let gameState = 'START_SCREEN'; // START_SCREEN, PLAYING, GAME_OVER, GAME_WIN
+let gameState = 'START_SCREEN';
 let score = 0;
 let level = 1;
 let lives = 3;
-let energy = 100; // Porcentagem: 0 a 100
+let energy = 100;
 let lastTime = 0;
-let joystickInputX = 0; // Controle horizontal do joystick analógico móvel
 
-// Entidades
-let player = null;
-let lasers = [];
-let enemies = [];
-let enemyLasers = [];
-let particles = [];
+let player       = null;
+let lasers       = [];
+let enemies      = [];
+let enemyLasers  = [];
+let particles    = [];
 
-// Configurações do Nível
-const ENEMIES_PER_ROW = 8;
+// Campo de estrelas com paralaxe
+const STARS = Array.from({ length: 80 }, () => ({
+    x:     Math.random() * 800,
+    y:     Math.random() * 600,
+    size:  Math.random() * 1.8 + 0.5,
+    speed: Math.random() * 0.6 + 0.2,
+    alpha: Math.random() * 0.6 + 0.4
+}));
+
+const ENEMIES_PER_ROW   = 8;
 let enemiesDefeatedInLevel = 0;
-let totalEnemiesInLevel = 16; // 2 fileiras de 8 inimigos por fase
-let currentEnemyRowY = 80;
-let enemyDirection = 1; // 1 = Direita, -1 = Esquerda
+const totalEnemiesInLevel  = 16;
+let currentEnemyRowY    = 80;
+let enemyDirection      = 1;
 let enemySpeedMultiplier = 1.0;
-let timeBetweenRows = 0; // Temporizador para gerar nova fileira se a anterior foi limpa, mas ainda não completou a fase
+let directionFlippedThisFrame = false;
 
-// Audio Context (Web Audio API)
 let audioCtx = null;
+let joystickInputX = 0;
 
 // ==========================================
-// PALETA DE CORES E SPRITES (PIXEL ART)
+// SPRITES (PIXEL ART EM MATRIZ)
+// ==========================================
+
+// ==========================================
+// SPRITES STAR WARS (PIXEL ART)
 // ==========================================
 
 const SPRITES = {
+    // Nave do jogador: X-Wing (amarelo e cinza)
     player: {
         data: [
             "....11....",
-            "...1111...",
-            "..113311..",
-            ".11111111.",
-            "1111331111",
+            "...1221...",
+            "3.122221.3",
+            "3311111133",
             "1111111111",
-            "1222..2221",
-            "12......21"
+            "1122112211",
+            "1.2....2.1",
+            "..2....2.."
         ],
-        palette: {
-            "1": "#FFFF00", // Amarelo clássico
-            "2": "#FF3300", // Vermelho propulsor
-            "3": "#00FFFF"  // Detalhe Ciano
-        }
+        palette: { "1":"#C8C8C8", "2":"#FF4500", "3":"#888888" }
     },
-    // Nível 1: Hambúrgueres Voadores
+    // Nível 1: TIE Fighter (cinza metálico)
     hamburger: {
         data: [
-            "..111111..",
-            ".11111111.",
-            "2222222222",
-            "3333333333",
-            "4444444444",
-            ".11111111.",
-            "..111111.."
+            "11.....11",
+            "11.222.11",
+            "11.222.11",
+            "111222111",
+            "111222111",
+            "11.222.11",
+            "11.....11"
         ],
-        palette: {
-            "1": "#D35400", // Pão (Laranja Escuro)
-            "2": "#2ECC71", // Alface (Verde)
-            "3": "#E74C3C", // Carne (Vermelho Escuro)
-            "4": "#F1C40F"  // Queijo (Amarelo)
-        }
+        palette: { "1":"#8899AA", "2":"#333344" }
     },
-    // Nível 2: Bolachas / Biscoitos
+    // Nível 2: AT-AT (bege/cinza)
     cookie: {
         data: [
             "..111111..",
-            ".12111211.",
-            "1111211111",
-            "3333333333",
-            "1112111211",
-            ".11112111.",
-            "..111111.."
+            ".11211211.",
+            "1122112211",
+            "1111111111",
+            "1111111111",
+            ".3..33..3.",
+            ".3..33..3."
         ],
-        palette: {
-            "1": "#E5A93C", // Biscoito (Marrom Claro)
-            "2": "#5C3A21", // Gotas de Chocolate (Marrom Escuro)
-            "3": "#FF85A2"  // Recheio (Rosa Chiclete)
-        }
+        palette: { "1":"#C8B89A", "2":"#4A4A4A", "3":"#888" }
     },
-    // Nível 3: Ferros de passar roupa
+    // Nível 3: Millennium Falcon (circular, bege)
     iron: {
         data: [
-            "....2222..",
-            "...2....2.",
-            "..2......2",
-            "1111111111",
-            "1113331111",
-            "1113331111",
-            "1111111111"
+            "..111111..",
+            ".12333211.",
+            "1233443321",
+            "1234554321",
+            "1234554321",
+            "1233443321",
+            ".12333211.",
+            "..111111.."
         ],
-        palette: {
-            "1": "#BDC3C7", // Corpo do Ferro (Cinza Aço)
-            "2": "#3498DB", // Alça (Azul Elétrico)
-            "3": "#E74C3C"  // Luz indicadora (Vermelho)
-        }
+        palette: { "1":"#AAAAAA", "2":"#888888", "3":"#666666", "4":"#444444", "5":"#222222" }
     },
-    // Nível 4: Gravatas Borboleta
+    // Nível 4: Death Star (cinza com ranhura)
     bowtie: {
         data: [
-            "111....111",
-            "1111..1111",
-            ".11122111.",
-            "..112211..",
-            ".11122111.",
-            "1111..1111",
-            "111....111"
+            "..111111..",
+            ".11111111.",
+            "1111111111",
+            "2222222222",
+            "1111211111",
+            ".11121111.",
+            "..111211.."
         ],
-        palette: {
-            "1": "#FF007F", // Gravata (Rosa Neon)
-            "2": "#9B59B6"  // Nó central (Roxo)
-        }
+        palette: { "1":"#999999", "2":"#444455" }
     },
-    // Nível 5: Diamantes
+    // Nível 5: Star Destroyer (triangular, cinza escuro)
     diamond: {
         data: [
-            "...11...",
-            "..1221..",
-            ".122221.",
-            "12222221",
-            ".122221.",
-            "..1221..",
-            "...11..."
+            "....11....",
+            "...1221...",
+            "..122221..",
+            ".12233221.",
+            "1222222221",
+            "1112222111",
+            "1111111111"
         ],
-        palette: {
-            "1": "#00FFFF", // Contorno (Ciano Vibrante)
-            "2": "#1F85DE"  // Centro (Azul Cristal)
-        }
+        palette: { "1":"#BBBBBB", "2":"#888899", "3":"#4466AA" }
     }
 };
 
-// Obter tipo de inimigo com base no nível
 function getEnemyTypeByLevel(lvl) {
-    const types = ['hamburger', 'cookie', 'iron', 'bowtie', 'diamond'];
-    // Rotacionar após o nível 5 para manter o jogo infinito em níveis superiores
-    const index = (lvl - 1) % types.length;
-    return types[index];
+    // Ondas em estilo Star Wars: TIE, AT-AT, Falcon, Death Star, Destroyer
+    const types = ['hamburger','cookie','iron','bowtie','diamond'];
+    return types[(lvl - 1) % types.length];
 }
 
-// Obter pontos com base no nível
 function getEnemyPointsByLevel(lvl) {
-    const points = [20, 30, 40, 50, 60];
-    const index = (lvl - 1) % points.length;
-    return points[index];
+    return [20,30,40,50,60][(lvl - 1) % 5];
 }
 
-// Função de desenho de Sprites baseados em Matriz de Pixel Art
+// Desenhar sprite pixel a pixel no canvas lógico
 function drawPixelSprite(x, y, spriteKey, scale = 4) {
     const sprite = SPRITES[spriteKey];
     if (!sprite) return;
-
-    const data = sprite.data;
-    const palette = sprite.palette;
-    const height = data.length;
-    const width = data[0].length;
-
-    // Salvar o estado do contexto
+    const { data, palette } = sprite;
     ctx.save();
-
-    for (let r = 0; r < height; r++) {
-        for (let c = 0; c < width; c++) {
-            const char = data[r][c];
-            if (char !== '.') {
-                ctx.fillStyle = palette[char] || '#FFFFFF';
-                // Desenhar o pixel escalado no Canvas lógico
+    for (let r = 0; r < data.length; r++) {
+        for (let c = 0; c < data[r].length; c++) {
+            const ch = data[r][c];
+            if (ch !== '.') {
+                ctx.fillStyle = palette[ch] || '#FFF';
                 ctx.fillRect(x + c * scale, y + r * scale, scale, scale);
             }
         }
     }
-
     ctx.restore();
 }
 
-// Retorna as dimensões físicas da sprite com base no tamanho da matriz e escala
 function getSpriteDimensions(spriteKey, scale = 4) {
-    const sprite = SPRITES[spriteKey];
-    if (!sprite) return { width: 0, height: 0 };
+    const s = SPRITES[spriteKey];
+    if (!s) return { width:0, height:0 };
+    return { width: s.data[0].length * scale, height: s.data.length * scale };
+}
+
+// ==========================================
+// ESCALA DO CANVAS — ESSENCIAL PARA COLISÃO MOBILE
+// ==========================================
+
+// Converte coordenadas de tela (CSS pixels) para coordenadas lógicas do jogo
+function screenToLogical(sx, sy) {
+    const rect = canvas.getBoundingClientRect();
     return {
-        width: sprite.data[0].length * scale,
-        height: sprite.data.length * scale
+        x: (sx - rect.left) * (LOGICAL_WIDTH  / rect.width),
+        y: (sy - rect.top)  * (LOGICAL_HEIGHT / rect.height)
     };
 }
 
 // ==========================================
-// SINTETIZADOR DE SONS (WEB AUDIO API)
+// WEB AUDIO API — SINTETIZADOR CHIPTUNE
 // ==========================================
 
 function initAudio() {
@@ -213,322 +193,227 @@ function initAudio() {
     }
 }
 
-// Som de laser agudo ao disparar (Player)
+// Som de laser estilo sabre de luz (descida suave de frequência)
 function playLaserSound() {
     if (!audioCtx) return;
-    const osc = audioCtx.createOscillator();
-    const gainNode = audioCtx.createGain();
-    
-    osc.type = 'triangle'; // Formato de onda retro
-    osc.frequency.setValueAtTime(900, audioCtx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(180, audioCtx.currentTime + 0.12);
-    
-    gainNode.gain.setValueAtTime(0.18, audioCtx.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.12);
-    
-    osc.connect(gainNode);
-    gainNode.connect(audioCtx.destination);
-    
-    osc.start();
-    osc.stop(audioCtx.currentTime + 0.12);
+    const osc  = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sawtooth'; // timbre mais agressivo
+    osc.frequency.setValueAtTime(600, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(120, audioCtx.currentTime + 0.18);
+    gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.18);
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.start(); osc.stop(audioCtx.currentTime + 0.18);
 }
 
-// Som de disparo do inimigo (mais grave e curto)
+// Som de disparo inimigo (mais grave)
 function playEnemyLaserSound() {
     if (!audioCtx) return;
-    const osc = audioCtx.createOscillator();
-    const gainNode = audioCtx.createGain();
-    
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(350, audioCtx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(70, audioCtx.currentTime + 0.18);
-    
-    gainNode.gain.setValueAtTime(0.08, audioCtx.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.005, audioCtx.currentTime + 0.18);
-    
-    osc.connect(gainNode);
-    gainNode.connect(audioCtx.destination);
-    
-    osc.start();
-    osc.stop(audioCtx.currentTime + 0.18);
+    const osc  = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(280, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(60, audioCtx.currentTime + 0.2);
+    gain.gain.setValueAtTime(0.07, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.2);
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.start(); osc.stop(audioCtx.currentTime + 0.2);
 }
 
-// Som de explosão "crushing" (ruído 8 bits dinâmico)
 function playExplosionSound() {
     if (!audioCtx) return;
-    const duration = 0.28;
-    const bufferSize = audioCtx.sampleRate * duration;
-    const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
-    const data = buffer.getChannelData(0);
-    
-    // Ruído branco
-    for (let i = 0; i < bufferSize; i++) {
-        data[i] = Math.random() * 2 - 1;
-    }
-    
-    const noiseNode = audioCtx.createBufferSource();
-    noiseNode.buffer = buffer;
-    
-    // Filtro passa-banda para dar o timbre do console retro
-    const filter = audioCtx.createBiquadFilter();
-    filter.type = 'bandpass';
-    filter.frequency.setValueAtTime(380, audioCtx.currentTime);
-    filter.frequency.exponentialRampToValueAtTime(45, audioCtx.currentTime + duration);
-    filter.Q.setValueAtTime(6, audioCtx.currentTime);
-    
-    const gainNode = audioCtx.createGain();
-    gainNode.gain.setValueAtTime(0.25, audioCtx.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.005, audioCtx.currentTime + duration);
-    
-    noiseNode.connect(filter);
-    filter.connect(gainNode);
-    gainNode.connect(audioCtx.destination);
-    
-    noiseNode.start();
-    noiseNode.stop(audioCtx.currentTime + duration);
+    const dur  = 0.28;
+    const buf  = audioCtx.createBuffer(1, audioCtx.sampleRate * dur, audioCtx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    const noise  = audioCtx.createBufferSource();
+    noise.buffer = buf;
+    const filt   = audioCtx.createBiquadFilter();
+    filt.type    = 'bandpass';
+    filt.frequency.setValueAtTime(380, audioCtx.currentTime);
+    filt.frequency.exponentialRampToValueAtTime(45, audioCtx.currentTime + dur);
+    filt.Q.setValueAtTime(6, audioCtx.currentTime);
+    const gain   = audioCtx.createGain();
+    gain.gain.setValueAtTime(0.25, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.005, audioCtx.currentTime + dur);
+    noise.connect(filt); filt.connect(gain); gain.connect(audioCtx.destination);
+    noise.start(); noise.stop(audioCtx.currentTime + dur);
 }
 
-// Som de destruição do Player
 function playPlayerDeathSound() {
     if (!audioCtx) return;
-    const duration = 0.75;
-    
-    // Ruído Explosivo
-    const bufferSize = audioCtx.sampleRate * duration;
-    const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) {
-        data[i] = Math.random() * 2 - 1;
-    }
-    
-    const noiseNode = audioCtx.createBufferSource();
-    noiseNode.buffer = buffer;
-    
-    const filter = audioCtx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(600, audioCtx.currentTime);
-    filter.frequency.exponentialRampToValueAtTime(20, audioCtx.currentTime + duration);
-    
-    const gainNoise = audioCtx.createGain();
-    gainNoise.gain.setValueAtTime(0.35, audioCtx.currentTime);
-    gainNoise.gain.exponentialRampToValueAtTime(0.005, audioCtx.currentTime + duration);
-    
-    // Tom grave decrescente adicional para dar peso à morte
-    const osc = audioCtx.createOscillator();
+    const dur  = 0.75;
+    const buf  = audioCtx.createBuffer(1, audioCtx.sampleRate * dur, audioCtx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    const noise  = audioCtx.createBufferSource();
+    noise.buffer = buf;
+    const filt   = audioCtx.createBiquadFilter();
+    filt.type    = 'lowpass';
+    filt.frequency.setValueAtTime(600, audioCtx.currentTime);
+    filt.frequency.exponentialRampToValueAtTime(20, audioCtx.currentTime + dur);
+    const gn = audioCtx.createGain();
+    gn.gain.setValueAtTime(0.35, audioCtx.currentTime);
+    gn.gain.exponentialRampToValueAtTime(0.005, audioCtx.currentTime + dur);
+    const osc  = audioCtx.createOscillator();
     osc.type = 'sawtooth';
     osc.frequency.setValueAtTime(100, audioCtx.currentTime);
-    osc.frequency.linearRampToValueAtTime(10, audioCtx.currentTime + duration);
-    
-    const gainOsc = audioCtx.createGain();
-    gainOsc.gain.setValueAtTime(0.25, audioCtx.currentTime);
-    gainOsc.gain.exponentialRampToValueAtTime(0.005, audioCtx.currentTime + duration);
-    
-    noiseNode.connect(filter);
-    filter.connect(gainNoise);
-    gainNoise.connect(audioCtx.destination);
-    
-    osc.connect(gainOsc);
-    gainOsc.connect(audioCtx.destination);
-    
-    noiseNode.start();
-    osc.start();
-    
-    noiseNode.stop(audioCtx.currentTime + duration);
-    osc.stop(audioCtx.currentTime + duration);
+    osc.frequency.linearRampToValueAtTime(10, audioCtx.currentTime + dur);
+    const go = audioCtx.createGain();
+    go.gain.setValueAtTime(0.25, audioCtx.currentTime);
+    go.gain.exponentialRampToValueAtTime(0.005, audioCtx.currentTime + dur);
+    noise.connect(filt); filt.connect(gn); gn.connect(audioCtx.destination);
+    osc.connect(go); go.connect(audioCtx.destination);
+    noise.start(); osc.start();
+    noise.stop(audioCtx.currentTime + dur); osc.stop(audioCtx.currentTime + dur);
 }
 
-// Fanfarra alegre de fim de fase (Acorde maior rápido)
+// Fanfarra de vitória — tema Star Wars (Mi-Mi-Mi-Mi-Mi-Do-Re-Mi / início)
 function playLevelClearSound() {
     if (!audioCtx) return;
-    const now = audioCtx.currentTime;
-    const notes = [261.63, 329.63, 392.00, 523.25]; // C4, E4, G4, C5 (Acorde Maior de Dó)
-    const duration = 0.15;
-    
-    notes.forEach((freq, index) => {
-        const osc = audioCtx.createOscillator();
-        const gainNode = audioCtx.createGain();
-        
-        osc.type = 'square'; // Som de chiptune clássico
-        osc.frequency.setValueAtTime(freq, now + index * 0.10);
-        
-        gainNode.gain.setValueAtTime(0.1, now + index * 0.10);
-        gainNode.gain.setValueAtTime(0.1, now + index * 0.10 + 0.08);
-        gainNode.gain.exponentialRampToValueAtTime(0.001, now + index * 0.10 + 0.10);
-        
-        osc.connect(gainNode);
-        gainNode.connect(audioCtx.destination);
-        
-        osc.start(now + index * 0.10);
-        osc.stop(now + index * 0.10 + duration);
+    const now   = audioCtx.currentTime;
+    // 5 notas ascendentes ao invés de acorde simultâneo
+    const melody = [329.63, 392.00, 349.23, 261.63, 392.00, 523.25];
+    melody.forEach((freq, i) => {
+        const osc  = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(freq, now + i * 0.09);
+        gain.gain.setValueAtTime(0.12, now + i * 0.09);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.09 + 0.09);
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.start(now + i * 0.09); osc.stop(now + i * 0.09 + 0.10);
     });
 }
 
 // ==========================================
-// INPUTS DE CONTROLE (TECLADO & MÓVEL)
+// INPUTS — TECLADO
 // ==========================================
 
-const keys = {
-    left: false,
-    right: false,
-    space: false
-};
+const keys = { left: false, right: false, space: false };
 
-// Ouvintes de Teclado
-window.addEventListener('keydown', (e) => {
-    if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
-        keys.left = true;
-    }
-    if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
-        keys.right = true;
-    }
-    if (e.key === ' ' || e.key === 'Spacebar') {
-        keys.space = true;
-        e.preventDefault(); // Evitar scroll de tela
-    }
+window.addEventListener('keydown', e => {
+    if (e.key === 'ArrowLeft'  || e.key === 'a' || e.key === 'A') keys.left  = true;
+    if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = true;
+    if (e.key === ' ' || e.key === 'Spacebar') { keys.space = true; e.preventDefault(); }
+});
+window.addEventListener('keyup', e => {
+    if (e.key === 'ArrowLeft'  || e.key === 'a' || e.key === 'A') keys.left  = false;
+    if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = false;
+    if (e.key === ' ' || e.key === 'Spacebar') keys.space = false;
 });
 
-window.addEventListener('keyup', (e) => {
-    if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
-        keys.left = false;
-    }
-    if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
-        keys.right = false;
-    }
-    if (e.key === ' ' || e.key === 'Spacebar') {
-        keys.space = false;
-    }
-});
+// ==========================================
+// INPUTS — MANCHE VIRTUAL (JOYSTICK)
+// ==========================================
 
-// Detecção de Dispositivos Móveis/Touch e Telas Estreitas
+// Detecção de dispositivo com tela de toque ou largura pequena
 function checkTouchDevice() {
     const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || (window.innerWidth <= 820);
-    const mobileControls = document.getElementById('mobileControls');
-    
+    const mc = document.getElementById('mobileControls');
     if (isTouch) {
-        mobileControls.classList.remove('hidden');
-        document.querySelector('.mobile-note').style.display = 'block';
+        mc.classList.remove('hidden');
     } else {
-        mobileControls.classList.add('hidden');
-        document.querySelector('.mobile-note').style.display = 'none';
+        mc.classList.add('hidden');
     }
 }
 
-// Desbloquear contexto de áudio em qualquer interação na página (mobile)
-window.addEventListener('click', initAudio, { once: true });
-window.addEventListener('touchstart', initAudio, { once: true });
+// Desbloquear áudio iOS/Android na primeira interação direta
+function unlockAudio() { initAudio(); }
+document.addEventListener('pointerdown', unlockAudio, { once: true });
 
-// Ouvintes do Manche Virtual (Joystick) e do Botão de Disparo
-const joystickBase = document.getElementById('joystickBase');
+const joystickBase  = document.getElementById('joystickBase');
 const joystickStick = document.getElementById('joystickStick');
-const btnFire = document.getElementById('btnFire');
+const btnFire       = document.getElementById('btnFire');
 
 let joystickActive = false;
-let joystickStartX = 0;
-const joystickMaxRadius = 40; // Pixels máximos de deslocamento do manche
+let joystickOriginX = 0;        // Centro REAL da base na tela (CSS px)
+const JOYSTICK_RADIUS = 38;     // Raio máximo de movimento do stick em CSS px
 
 if (joystickBase && joystickStick) {
-    joystickBase.addEventListener('pointerdown', (e) => {
+    joystickBase.addEventListener('pointerdown', e => {
         e.preventDefault();
         initAudio();
         joystickActive = true;
-        joystickStartX = e.clientX;
+        // Ponto de origem = centro da base no momento do toque
+        const rect = joystickBase.getBoundingClientRect();
+        joystickOriginX = rect.left + rect.width / 2;
         joystickBase.setPointerCapture(e.pointerId);
     });
 
-    joystickBase.addEventListener('pointermove', (e) => {
+    joystickBase.addEventListener('pointermove', e => {
         if (!joystickActive) return;
         e.preventDefault();
-        const dx = e.clientX - joystickStartX;
-        
-        // Limitar deslocamento ao raio do manche
-        const limitedDx = Math.max(-joystickMaxRadius, Math.min(joystickMaxRadius, dx));
-        
-        // Mover visualmente o manche apenas na horizontal
-        joystickStick.style.transform = `translate(${limitedDx}px, 0px)`;
-        
-        // Calcular o valor de entrada normalizado (-1.0 a 1.0)
-        joystickInputX = limitedDx / joystickMaxRadius;
+        const dx = e.clientX - joystickOriginX;
+        const clamped = Math.max(-JOYSTICK_RADIUS, Math.min(JOYSTICK_RADIUS, dx));
+        joystickStick.style.transform = `translate(${clamped}px, 0px)`;
+        joystickInputX = clamped / JOYSTICK_RADIUS; // -1.0 a 1.0
     });
 
-    const endJoystick = (e) => {
+    const releaseJoystick = e => {
         if (!joystickActive) return;
         e.preventDefault();
         joystickActive = false;
         joystickStick.style.transform = 'translate(0px, 0px)';
         joystickInputX = 0;
-        try {
-            joystickBase.releasePointerCapture(e.pointerId);
-        } catch (err) {}
+        try { joystickBase.releasePointerCapture(e.pointerId); } catch(_) {}
     };
 
-    joystickBase.addEventListener('pointerup', endJoystick);
-    joystickBase.addEventListener('pointercancel', endJoystick);
+    joystickBase.addEventListener('pointerup',     releaseJoystick);
+    joystickBase.addEventListener('pointercancel', releaseJoystick);
 }
 
 if (btnFire) {
-    btnFire.addEventListener('pointerdown', (e) => {
+    btnFire.addEventListener('pointerdown', e => {
         e.preventDefault();
         keys.space = true;
         initAudio();
     });
-    
-    const endFire = (e) => {
-        e.preventDefault();
-        keys.space = false;
-    };
-    
-    btnFire.addEventListener('pointerup', endFire);
-    btnFire.addEventListener('pointercancel', endFire);
+    const releaseFire = e => { e.preventDefault(); keys.space = false; };
+    btnFire.addEventListener('pointerup',     releaseFire);
+    btnFire.addEventListener('pointercancel', releaseFire);
 }
 
 // ==========================================
-// ENTIDADES DO JOGO
+// ENTIDADES
 // ==========================================
 
-// Classe Player
 class Player {
     constructor() {
-        const dims = getSpriteDimensions('player', 4);
-        this.width = dims.width;
-        this.height = dims.height;
-        this.x = LOGICAL_WIDTH / 2 - this.width / 2;
-        this.y = LOGICAL_HEIGHT - this.height - 50; // Posicionado acima da barra de energia
-        this.speed = 0.55; // Velocidade de aceleração
-        this.vx = 0;      // Velocidade horizontal atual
-        this.friction = 0.88; // Fricção para parada suave
+        const d = getSpriteDimensions('player', 4);
+        this.width  = d.width;
+        this.height = d.height;
+        this.x    = LOGICAL_WIDTH / 2 - this.width / 2;
+        this.y    = LOGICAL_HEIGHT - this.height - 50;
+        this.accel   = 0.55;
+        this.vx      = 0;
+        this.friction = 0.88;
         this.lastShotTime = 0;
-        this.shootDelay = 180; // Tempo em ms entre disparos (tiros rápidos)
+        this.shootDelay   = 200;
     }
 
-    update(deltaTime) {
-        // Movimentação com física/aceleração (analógico móvel ou teclado)
+    update(dt) {
+        // Prioridade: manche analógico > teclado
         if (joystickInputX !== 0) {
-            this.vx += this.speed * joystickInputX * deltaTime;
+            this.vx += this.accel * joystickInputX * dt;
         } else {
-            if (keys.left) {
-                this.vx -= this.speed * deltaTime;
-            }
-            if (keys.right) {
-                this.vx += this.speed * deltaTime;
-            }
+            if (keys.left)  this.vx -= this.accel * dt;
+            if (keys.right) this.vx += this.accel * dt;
         }
 
-        // Aplicar atrito/desaceleração
-        this.vx *= Math.pow(this.friction, deltaTime);
+        // Atrito
+        this.vx *= Math.pow(this.friction, dt);
 
         this.x += this.vx;
 
-        // Limites de tela lógicos
-        if (this.x < 10) {
-            this.x = 10;
-            this.vx = 0;
-        }
+        // Limites
+        if (this.x < 10) { this.x = 10; this.vx = 0; }
         if (this.x + this.width > LOGICAL_WIDTH - 10) {
-            this.x = LOGICAL_WIDTH - 10 - this.width;
-            this.vx = 0;
+            this.x = LOGICAL_WIDTH - 10 - this.width; this.vx = 0;
         }
 
-        // Disparo automático/manual rápido se a barra de espaço estiver pressionada
+        // Disparo contínuo enquanto pressionado
         if (keys.space) {
             const now = Date.now();
             if (now - this.lastShotTime > this.shootDelay) {
@@ -539,403 +424,327 @@ class Player {
     }
 
     shoot() {
-        // Criação do laser saindo do centro da nave
-        const laserX = this.x + this.width / 2 - 3;
-        const laserY = this.y - 12;
-        lasers.push(new Laser(laserX, laserY, this.vx));
+        const lx = this.x + this.width / 2 - 3;
+        const ly = this.y - 12;
+        lasers.push(new Laser(lx, ly, this.vx));
         playLaserSound();
     }
 
-    draw() {
-        drawPixelSprite(this.x, this.y, 'player', 4);
-    }
+    draw() { drawPixelSprite(this.x, this.y, 'player', 4); }
 }
 
-// Classe Laser (Projétil do Player)
 class Laser {
-    constructor(x, y, playerVx) {
-        this.x = x;
-        this.y = y;
-        this.width = 6;
+    constructor(x, y, pvx) {
+        this.x = x; this.y = y;
+        this.width  = 6;
         this.height = 18;
-        this.speedY = 13.5; // Projéteis rápidos
-        // Controle guiado do laser clássico do Megamania:
-        // O projétil herda uma fração da velocidade lateral do jogador
-        this.vx = playerVx * 0.38;
+        this.speedY = 14;
+        this.vx = pvx * 0.35; // herda fração da velocidade lateral do jogador
     }
 
-    update(deltaTime) {
-        this.y -= this.speedY * deltaTime;
-        this.x += this.vx * deltaTime;
+    update(dt) {
+        this.y -= this.speedY * dt;
+        this.x += this.vx * dt;
     }
 
     draw() {
-        // Desenha laser com efeito de brilho neon rosa brilhante
         ctx.save();
-        ctx.fillStyle = '#FF007F';
-        ctx.shadowColor = '#FF007F';
-        ctx.shadowBlur = 8;
+        // Laser dourado do X-Wing
+        ctx.fillStyle   = '#FFD700';
+        ctx.shadowColor = '#FFD700';
+        ctx.shadowBlur  = 12;
         ctx.fillRect(this.x, this.y, this.width, this.height);
         ctx.restore();
     }
 }
 
-// Classe Enemy (Inimigos)
 class Enemy {
     constructor(x, y, type) {
         this.type = type;
-        const dims = getSpriteDimensions(type, 4);
-        this.width = dims.width;
-        this.height = dims.height;
-        this.x = x;
-        this.y = y;
-        // Padrão de velocidade de zigue-zague
+        const d = getSpriteDimensions(type, 4);
+        this.width  = d.width;
+        this.height = d.height;
+        this.x = x; this.y = y;
         this.baseSpeedX = 2.2;
-        this.points = getEnemyPointsByLevel(level);
-        
-        // Efeito visual de animação simples de flutuação vertical individual
-        this.floatOffset = Math.random() * Math.PI * 2;
-        this.floatSpeed = 0.05 + Math.random() * 0.03;
+        this.points     = getEnemyPointsByLevel(level);
+        this.floatOffset    = Math.random() * Math.PI * 2;
+        this.floatSpeed     = 0.05 + Math.random() * 0.03;
         this.floatAmplitude = 2.5;
         this.originalY = y;
     }
 
-    update(deltaTime, dir, levelMult) {
-        // Movimentação horizontal em grupo ditada pela direção do grupo e multiplicador
-        this.x += this.baseSpeedX * dir * levelMult * deltaTime;
-        
-        // Oscilação vertical sutil para parecer flutuação orgânica
-        this.floatOffset += this.floatSpeed * deltaTime;
+    update(dt, dir, mult) {
+        this.x += this.baseSpeedX * dir * mult * dt;
+        this.floatOffset += this.floatSpeed * dt;
         this.y = this.originalY + Math.sin(this.floatOffset) * this.floatAmplitude;
-
-        // Decisão de disparo aleatório (baixa probabilidade por frame para evitar spam)
-        // Aumenta ligeiramente a chance conforme o multiplicador do nível
-        if (Math.random() < 0.0006 * levelMult && enemyLasers.length < 3) {
+        // Disparo esporádico (máx 3 projéteis inimigos simultâneos na tela)
+        if (Math.random() < 0.0006 * mult && enemyLasers.length < 3) {
             this.shoot();
         }
     }
 
     shoot() {
-        const laserX = this.x + this.width / 2 - 3;
-        const laserY = this.y + this.height + 4;
-        enemyLasers.push(new EnemyLaser(laserX, laserY));
+        enemyLasers.push(new EnemyLaser(this.x + this.width / 2 - 3, this.y + this.height + 4));
         playEnemyLaserSound();
     }
 
-    draw() {
-        drawPixelSprite(this.x, this.y, this.type, 4);
-    }
+    draw() { drawPixelSprite(this.x, this.y, this.type, 4); }
 }
 
-// Classe EnemyLaser (Projétil dos Inimigos)
 class EnemyLaser {
     constructor(x, y) {
-        this.x = x;
-        this.y = y;
-        this.width = 6;
+        this.x = x; this.y = y;
+        this.width  = 6;
         this.height = 14;
-        this.speedY = 4.2; // Projéteis inimigos mais lentos e desviáveis
+        this.speedY = 4.2;
     }
 
-    update(deltaTime) {
-        this.y += this.speedY * deltaTime;
-    }
+    update(dt) { this.y += this.speedY * dt; }
 
     draw() {
-        // Laser inimigo verde neon brilhante
         ctx.save();
-        ctx.fillStyle = '#00FF00';
-        ctx.shadowColor = '#00FF00';
-        ctx.shadowBlur = 8;
+        // Laser vermelho do Império
+        ctx.fillStyle   = '#FF3B3B';
+        ctx.shadowColor = '#FF3B3B';
+        ctx.shadowBlur  = 10;
         ctx.fillRect(this.x, this.y, this.width, this.height);
         ctx.restore();
     }
 }
 
-// Classe Particle (Partículas de explosão premium)
 class Particle {
     constructor(x, y, color) {
-        this.x = x;
-        this.y = y;
-        this.size = Math.random() * 3 + 2;
-        const angle = Math.random() * Math.PI * 2;
-        const speed = Math.random() * 4 + 2;
-        this.vx = Math.cos(angle) * speed;
-        this.vy = Math.sin(angle) * speed;
+        this.x = x; this.y = y;
+        this.size  = Math.random() * 3 + 2;
+        const ang  = Math.random() * Math.PI * 2;
+        const spd  = Math.random() * 4 + 2;
+        this.vx    = Math.cos(ang) * spd;
+        this.vy    = Math.sin(ang) * spd;
         this.color = color;
         this.alpha = 1.0;
         this.decay = Math.random() * 0.03 + 0.02;
     }
 
-    update(deltaTime) {
-        this.x += this.vx * deltaTime;
-        this.y += this.vy * deltaTime;
-        this.alpha -= this.decay * deltaTime;
+    update(dt) {
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+        this.alpha -= this.decay * dt;
     }
 
     draw() {
         ctx.save();
         ctx.globalAlpha = Math.max(0, this.alpha);
-        ctx.fillStyle = this.color;
+        ctx.fillStyle   = this.color;
         ctx.fillRect(this.x, this.y, this.size, this.size);
         ctx.restore();
     }
 }
 
 // ==========================================
-// SISTEMA DE PARTÍCULAS
+// EXPLOSÃO DE PARTÍCULAS
 // ==========================================
 
 function createExplosion(x, y, spriteKey) {
-    const sprite = SPRITES[spriteKey];
-    const colors = sprite ? Object.values(sprite.palette) : ['#FFFFFF', '#FF007F', '#00FFFF'];
-    
-    // Gerar 15 a 20 partículas
-    const count = 18;
-    for (let i = 0; i < count; i++) {
-        const color = colors[Math.floor(Math.random() * colors.length)];
-        particles.push(new Particle(x, y, color));
+    const sprite  = SPRITES[spriteKey];
+    const colors  = sprite ? Object.values(sprite.palette) : ['#FFF','#FF007F','#00FFFF'];
+    for (let i = 0; i < 20; i++) {
+        particles.push(new Particle(x, y, colors[Math.floor(Math.random() * colors.length)]));
     }
 }
 
 // ==========================================
-// LÓGICA DE SPAWN DOS INIMIGOS E ONDAS
+// SPAWN DE INIMIGOS
 // ==========================================
 
 function spawnEnemyRow() {
-    const type = getEnemyTypeByLevel(level);
-    const dims = getSpriteDimensions(type, 4);
+    const type  = getEnemyTypeByLevel(level);
+    const dims  = getSpriteDimensions(type, 4);
     const spacing = 15;
-    const totalRowWidth = (ENEMIES_PER_ROW * dims.width) + ((ENEMIES_PER_ROW - 1) * spacing);
-    
-    // Centralizar a linha de inimigos no início
-    const startX = (LOGICAL_WIDTH - totalRowWidth) / 2;
-    currentEnemyRowY = 80;
-    
-    enemies = [];
-    enemyDirection = 1;
+    const totalW  = ENEMIES_PER_ROW * dims.width + (ENEMIES_PER_ROW - 1) * spacing;
+    const startX  = (LOGICAL_WIDTH - totalW) / 2;
+    currentEnemyRowY      = 80;
+    enemies               = [];
+    enemyDirection        = 1;
+    directionFlippedThisFrame = false;
 
     for (let i = 0; i < ENEMIES_PER_ROW; i++) {
-        const enemyX = startX + i * (dims.width + spacing);
-        const enemyY = currentEnemyRowY;
-        const enemy = new Enemy(enemyX, enemyY, type);
-        // Ajustar originalY para controle de flutuação
-        enemy.originalY = enemyY;
-        enemies.push(enemy);
+        const e = new Enemy(startX + i * (dims.width + spacing), currentEnemyRowY, type);
+        e.originalY = currentEnemyRowY;
+        enemies.push(e);
     }
 }
 
 // ==========================================
-// FUNÇÕES DE COLISÃO
+// COLISÃO AABB
 // ==========================================
 
-function checkAABBCollision(rect1, rect2) {
-    return rect1.x < rect2.x + rect2.width &&
-           rect1.x + rect1.width > rect2.x &&
-           rect1.y < rect2.y + rect2.height &&
-           rect1.y + rect1.height > rect2.y;
+function checkAABBCollision(a, b) {
+    return a.x < b.x + b.width  &&
+           a.x + a.width  > b.x &&
+           a.y < b.y + b.height &&
+           a.y + a.height > b.y;
 }
 
 // ==========================================
-// LOOP DE JOGO E CONTROLES DE ESTADO
+// GERENCIAMENTO DE TELAS
 // ==========================================
 
-function showScreen(screenId) {
-    // Esconder todas as telas overlay
-    document.getElementById('startScreen').classList.add('hidden');
-    document.getElementById('gameOverScreen').classList.add('hidden');
-    document.getElementById('gameWinScreen').classList.add('hidden');
-
-    // Mostrar a tela desejada se informada
-    if (screenId) {
-        document.getElementById(screenId).classList.remove('hidden');
-    }
+function showScreen(id) {
+    ['startScreen','gameOverScreen','gameWinScreen'].forEach(s =>
+        document.getElementById(s).classList.add('hidden')
+    );
+    if (id) document.getElementById(id).classList.remove('hidden');
 }
+
+// ==========================================
+// CONTROLE DE ESTADO DO JOGO
+// ==========================================
 
 function startGame() {
     initAudio();
-    score = 0;
-    level = 1;
-    lives = 3;
-    energy = 100;
-    enemySpeedMultiplier = 1.0;
+    score = 0; level = 1; lives = 3; energy = 100;
+    enemySpeedMultiplier   = 1.0;
     enemiesDefeatedInLevel = 0;
-    
-    lasers = [];
-    enemies = [];
-    enemyLasers = [];
-    particles = [];
-    
+    lasers = []; enemies = []; enemyLasers = []; particles = [];
     player = new Player();
-    
     spawnEnemyRow();
-    
     gameState = 'PLAYING';
     showScreen(null);
     lastTime = performance.now();
     requestAnimationFrame(updateLoop);
 }
 
-function restartGame() {
-    startGame();
-}
+function restartGame() { startGame(); }
 
 function triggerPlayerDeath() {
+    if (!player) return;
     playPlayerDeathSound();
     createExplosion(player.x + player.width / 2, player.y + player.height / 2, 'player');
-    
     lives--;
-    energy = 100; // Resetar energia ao morrer
-    
+    energy = 100;
     if (lives <= 0) {
         gameState = 'GAME_OVER';
         document.getElementById('finalScore').textContent = score;
-        document.getElementById('finalLevel').textContent = level;
+        document.getElementById('finalLevel').textContent  = level;
         showScreen('gameOverScreen');
     } else {
-        // Resetar posições
         player = new Player();
-        lasers = [];
-        enemyLasers = [];
-        // Reposicionar a linha de inimigos no topo
+        lasers = []; enemyLasers = [];
         spawnEnemyRow();
     }
 }
 
 function advanceLevel() {
     playLevelClearSound();
-    
-    // Somar pontos bônus equivalentes ao combustível/energia restante
-    const energyBonus = Math.floor(energy * 15);
-    score += energyBonus;
-    
+    score += Math.floor(energy * 15); // bônus de combustível restante
     level++;
-    
-    // Se passarmos do nível 5, o jogador vence!
     if (level > 5) {
         gameState = 'GAME_WIN';
         document.getElementById('winScore').textContent = score;
         showScreen('gameWinScreen');
         return;
     }
-    
-    // Atualizar multiplicadores de velocidade
-    enemySpeedMultiplier = 1.0 + (level - 1) * 0.25;
-    
-    // Resetar variáveis de onda
+    enemySpeedMultiplier   = 1.0 + (level - 1) * 0.25;
     enemiesDefeatedInLevel = 0;
     energy = 100;
-    lasers = [];
-    enemyLasers = [];
-    
+    lasers = []; enemyLasers = [];
     spawnEnemyRow();
 }
 
 // ==========================================
-// LOOP DE ATUALIZAÇÃO E RENDERIZAÇÃO
+// LOOP PRINCIPAL
 // ==========================================
 
-function updateLoop(timestamp) {
+function updateLoop(ts) {
     if (gameState !== 'PLAYING') return;
-
-    // Calcular Delta Time para movimentação fluida e independente da taxa de quadros (framerate)
-    let deltaTime = (timestamp - lastTime) / 16.666; // Normalizado em torno de 60fps (16.67ms)
-    
-    // Evitar saltos gigantes em deltaTime se o jogo for minimizado ou perder foco
-    if (deltaTime > 4) deltaTime = 4;
-    lastTime = timestamp;
-
-    updatePhysics(deltaTime);
+    let dt = (ts - lastTime) / 16.666;
+    if (dt > 4) dt = 4;
+    lastTime = ts;
+    updatePhysics(dt);
     renderGame();
-
     requestAnimationFrame(updateLoop);
 }
 
-function updatePhysics(deltaTime) {
-    // 1. Atualizar Player
-    if (player) {
-        player.update(deltaTime);
-    }
+// ==========================================
+// FÍSICA E COLISÕES
+// ==========================================
 
-    // 2. Barra de Combustível / Energia
-    // Drena energia gradualmente. A taxa aumenta ligeiramente a cada nível.
-    const drainRate = (0.045 + (level * 0.005)) * deltaTime;
-    energy -= drainRate;
+function updatePhysics(dt) {
+
+    // 1. Player
+    if (player) player.update(dt);
+
+    // 2. Energia — drena constantemente
+    energy -= (0.045 + level * 0.005) * dt;
     if (energy <= 0) {
         energy = 0;
         triggerPlayerDeath();
         return;
     }
 
-    // 3. Atualizar Lasers do Player
+    // 3. Lasers do player
     for (let i = lasers.length - 1; i >= 0; i--) {
-        lasers[i].update(deltaTime);
-        // Remover lasers fora da tela
-        if (lasers[i].y < -20 || lasers[i].x < -20 || lasers[i].x > LOGICAL_WIDTH + 20) {
+        lasers[i].update(dt);
+        const l = lasers[i];
+        if (l.y < -20 || l.x < -20 || l.x > LOGICAL_WIDTH + 20) {
             lasers.splice(i, 1);
         }
     }
 
-    // 4. Atualizar Lasers dos Inimigos
+    // 4. Lasers dos inimigos
     for (let i = enemyLasers.length - 1; i >= 0; i--) {
-        enemyLasers[i].update(deltaTime);
-        if (enemyLasers[i].y > LOGICAL_HEIGHT + 20) {
-            enemyLasers.splice(i, 1);
-        }
+        enemyLasers[i].update(dt);
+        if (enemyLasers[i].y > LOGICAL_HEIGHT + 20) enemyLasers.splice(i, 1);
     }
 
-    // 5. Atualizar Inimigos (Zigue-zague e descida)
-    let touchBorder = false;
+    // 5. Inimigos — movimento em zigue-zague corrigido
+    directionFlippedThisFrame = false;
+
     for (let i = 0; i < enemies.length; i++) {
-        enemies[i].update(deltaTime, enemyDirection, enemySpeedMultiplier);
-        
-        // Verificar se tocou a borda lógica
-        if (enemyDirection === 1 && (enemies[i].x + enemies[i].width) >= LOGICAL_WIDTH - 15) {
-            touchBorder = true;
-        } else if (enemyDirection === -1 && enemies[i].x <= 15) {
-            touchBorder = true;
-        }
+        enemies[i].update(dt, enemyDirection, enemySpeedMultiplier);
     }
 
-    // Se qualquer inimigo bater na parede, inverte a direção de todos e desce a linha
-    if (touchBorder) {
-        enemyDirection *= -1;
-        currentEnemyRowY += 15 + (level * 2); // Inimigos descem um pouco mais rápido nos níveis superiores
-        
-        // Empurrar todos os inimigos verticalmente para a nova linha lógica
+    // Verificar colisão com borda DEPOIS de mover todos — só inverte uma vez por frame
+    if (!directionFlippedThisFrame) {
+        let hitWall = false;
         for (let i = 0; i < enemies.length; i++) {
-            enemies[i].originalY = currentEnemyRowY;
+            const e = enemies[i];
+            if (enemyDirection === 1  && (e.x + e.width) >= LOGICAL_WIDTH  - 15) { hitWall = true; break; }
+            if (enemyDirection === -1 && e.x <= 15)                                { hitWall = true; break; }
+        }
+        if (hitWall) {
+            directionFlippedThisFrame = true;
+            enemyDirection *= -1;
+            currentEnemyRowY += 15 + (level * 2);
+            // Limitar descida: se passar de 70% da altura lógica, não desce mais
+            currentEnemyRowY = Math.min(currentEnemyRowY, LOGICAL_HEIGHT * 0.70 - 60);
+            for (let i = 0; i < enemies.length; i++) {
+                enemies[i].originalY = currentEnemyRowY;
+            }
         }
     }
 
-    // 6. Atualizar Partículas
+    // 6. Partículas
     for (let i = particles.length - 1; i >= 0; i--) {
-        particles[i].update(deltaTime);
-        if (particles[i].alpha <= 0) {
-            particles.splice(i, 1);
-        }
+        particles[i].update(dt);
+        if (particles[i].alpha <= 0) particles.splice(i, 1);
     }
 
     // ==========================================
-    // VERIFICAÇÃO DE COLISÕES
+    // COLISÕES
     // ==========================================
 
-    // Colisão: Laser do Player vs Inimigos
+    // Laser do player vs inimigos
     for (let i = lasers.length - 1; i >= 0; i--) {
         const l = lasers[i];
         let hit = false;
-        
         for (let j = enemies.length - 1; j >= 0; j--) {
             const e = enemies[j];
-            
             if (checkAABBCollision(l, e)) {
                 playExplosionSound();
                 createExplosion(e.x + e.width / 2, e.y + e.height / 2, e.type);
-                
                 score += e.points;
                 enemiesDefeatedInLevel++;
-                
-                // Remover inimigo e laser
                 enemies.splice(j, 1);
                 lasers.splice(i, 1);
                 hit = true;
@@ -945,23 +754,21 @@ function updatePhysics(deltaTime) {
         if (hit) continue;
     }
 
-    // Verificar se a fileira atual de inimigos foi limpa
+    // Verificar se a fileira foi limpa
     if (enemies.length === 0) {
         if (enemiesDefeatedInLevel >= totalEnemiesInLevel) {
-            // Avança para o próximo nível
             advanceLevel();
         } else {
-            // Se ainda faltam inimigos para completar a cota do nível, gera mais uma fileira no topo
-            energy = Math.min(100, energy + 30); // Ganha recarga parcial ao limpar a fileira intermediária
+            energy = Math.min(100, energy + 30); // recarga parcial ao limpar fileira intermediária
             spawnEnemyRow();
         }
+        return;
     }
 
-    // Colisão: Laser dos Inimigos vs Player
+    // Laser inimigo vs player
     if (player) {
         for (let i = enemyLasers.length - 1; i >= 0; i--) {
-            const el = enemyLasers[i];
-            if (checkAABBCollision(el, player)) {
+            if (checkAABBCollision(enemyLasers[i], player)) {
                 enemyLasers.splice(i, 1);
                 triggerPlayerDeath();
                 return;
@@ -969,171 +776,123 @@ function updatePhysics(deltaTime) {
         }
     }
 
-    // Colisão: Inimigo vs Player (Contato Direto)
+    // Inimigo vs player (contato direto ou invasão de linha)
     if (player) {
         for (let i = 0; i < enemies.length; i++) {
             const e = enemies[i];
-            if (checkAABBCollision(e, player)) {
-                triggerPlayerDeath();
-                return;
-            }
-            
-            // Se o inimigo descer demais e passar da linha do jogador, ele explode e o jogador perde a vida
-            if (e.y + e.height >= player.y + player.height) {
-                triggerPlayerDeath();
-                return;
-            }
+            if (checkAABBCollision(e, player)) { triggerPlayerDeath(); return; }
+            if (e.y + e.height >= player.y)    { triggerPlayerDeath(); return; }
         }
     }
 }
+
+// ==========================================
+// RENDERIZAÇÃO
+// ==========================================
 
 function renderGame() {
-    // Limpar o Canvas com fundo preto sólido clássico do Atari
-    ctx.fillStyle = '#000000';
+    // Fundo preto profundo do espaço
+    ctx.fillStyle = '#000008';
     ctx.fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
 
-    // Efeito sutil de estrelas de fundo de chiptune clássico (estrelas estáticas que piscam)
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
-    for (let i = 0; i < 40; i++) {
-        // Posicionamento pseudo-aleatório baseado no índice
-        const x = (i * 73) % LOGICAL_WIDTH;
-        const y = (i * 109) % (LOGICAL_HEIGHT - 60);
-        // Piscar leve
-        if ((Math.floor(performance.now() / 250) + i) % 7 !== 0) {
-            ctx.fillRect(x, y, 2, 2);
+    // Campo de estrelas com paralaxe
+    for (let i = 0; i < STARS.length; i++) {
+        const s = STARS[i];
+        // Mover estrela para baixo (simula nave indo para frente)
+        s.y += s.speed;
+        if (s.y > LOGICAL_HEIGHT) {
+            s.y = 0;
+            s.x = Math.random() * LOGICAL_WIDTH;
         }
+        ctx.globalAlpha = s.alpha;
+        ctx.fillStyle   = '#FFFFFF';
+        ctx.fillRect(s.x, s.y, s.size, s.size);
     }
+    ctx.globalAlpha = 1;
 
-    // 1. Desenhar Inimigos
-    for (let i = 0; i < enemies.length; i++) {
-        enemies[i].draw();
-    }
+    // Inimigos
+    enemies.forEach(e => e.draw());
+    // Lasers do player
+    lasers.forEach(l => l.draw());
+    // Lasers dos inimigos
+    enemyLasers.forEach(el => el.draw());
+    // Partículas
+    particles.forEach(p => p.draw());
+    // Player
+    if (player) player.draw();
 
-    // 2. Desenhar Lasers do Jogador
-    for (let i = 0; i < lasers.length; i++) {
-        lasers[i].draw();
-    }
+    // ---- HUD ----
 
-    // 3. Desenhar Lasers dos Inimigos
-    for (let i = 0; i < enemyLasers.length; i++) {
-        enemyLasers[i].draw();
-    }
-
-    // 4. Desenhar Partículas
-    for (let i = 0; i < particles.length; i++) {
-        particles[i].draw();
-    }
-
-    // 5. Desenhar Jogador
-    if (player) {
-        player.draw();
-    }
-
-    // ==========================================
-    // DESENHAR INTERFACE (UI) NO CANVAS
-    // ==========================================
-
-    // HUD Superior: Pontuação e Nível
-    ctx.font = '16px "Press Start 2P"';
+    ctx.font      = '16px "Press Start 2P"';
     ctx.textAlign = 'left';
-    
-    // Desenhar Placar em Amarelo brilhante
-    ctx.fillStyle = '#FFFF00';
+
+    // Score em ouro
+    ctx.fillStyle = '#FFD700';
     ctx.fillText(`SCORE: ${score}`, 20, 35);
 
-    // Desenhar Nível no Canto Direito
+    // Level em azul sw
     ctx.textAlign = 'right';
-    ctx.fillStyle = '#00FFFF';
+    ctx.fillStyle = '#4FC3F7';
     ctx.fillText(`LEVEL: ${level}`, LOGICAL_WIDTH - 20, 35);
 
-    // Linha divisória superior fina
-    ctx.strokeStyle = '#333333';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(0, 50);
-    ctx.lineTo(LOGICAL_WIDTH, 50);
-    ctx.stroke();
+    // Linha superior dourada
+    ctx.strokeStyle = 'rgba(255,215,0,0.3)';
+    ctx.lineWidth   = 2;
+    ctx.beginPath(); ctx.moveTo(0, 50); ctx.lineTo(LOGICAL_WIDTH, 50); ctx.stroke();
 
-    // HUD Inferior: Vidas e Barra de Energia
-    // Linha divisória inferior fina
-    ctx.beginPath();
-    ctx.moveTo(0, LOGICAL_HEIGHT - 60);
-    ctx.lineTo(LOGICAL_WIDTH, LOGICAL_HEIGHT - 60);
-    ctx.stroke();
+    // Linha inferior
+    ctx.strokeStyle = 'rgba(255,215,0,0.3)';
+    ctx.beginPath(); ctx.moveTo(0, LOGICAL_HEIGHT - 60); ctx.lineTo(LOGICAL_WIDTH, LOGICAL_HEIGHT - 60); ctx.stroke();
 
-    // Desenhar Ícones de Vidas (Pequenas naves)
+    // Vidas
     ctx.textAlign = 'left';
-    ctx.fillStyle = '#FFFFFF';
+    ctx.fillStyle = '#FFD700';
     ctx.fillText('LIVES:', 20, LOGICAL_HEIGHT - 25);
-    
     for (let i = 0; i < lives; i++) {
-        // Desenha pequenas naves amarelas ao lado do texto de vidas
-        const lifeX = 110 + i * 28;
-        const lifeY = LOGICAL_HEIGHT - 40;
-        drawPixelSprite(lifeX, lifeY, 'player', 2); // Escala 2 para ficar menor
+        drawPixelSprite(112 + i * 28, LOGICAL_HEIGHT - 40, 'player', 2);
     }
 
-    // Desenhar Barra de Energia / Combustível
+    // Barra de energia
     ctx.textAlign = 'right';
-    ctx.fillStyle = '#FF007F';
-    ctx.fillText('ENERGY:', LOGICAL_WIDTH - 240, LOGICAL_HEIGHT - 25);
+    ctx.fillStyle = '#4FC3F7';
+    ctx.fillText('FORCE:', LOGICAL_WIDTH - 240, LOGICAL_HEIGHT - 25);
 
-    const barX = LOGICAL_WIDTH - 220;
-    const barY = LOGICAL_HEIGHT - 40;
-    const barWidth = 200;
-    const barHeight = 20;
+    const bx = LOGICAL_WIDTH - 220;
+    const by = LOGICAL_HEIGHT - 40;
+    const bw = 200;
+    const bh = 20;
 
-    // Contorno da barra (cinza)
-    ctx.strokeStyle = '#555555';
-    ctx.lineWidth = 3;
-    ctx.strokeRect(barX, barY, barWidth, barHeight);
+    ctx.strokeStyle = 'rgba(255,215,0,0.4)';
+    ctx.lineWidth   = 3;
+    ctx.strokeRect(bx, by, bw, bh);
 
-    // Preenchimento da Barra (Mudança de cor baseada no nível de energia: Verde -> Amarelo -> Vermelho)
-    let barColor = '#00FF00'; // Verde
+    let barColor = '#39FF14'; // verde neon
     if (energy < 25) {
-        barColor = '#FF0000'; // Vermelho piscante se muito baixo
-        if (Math.floor(performance.now() / 150) % 2 === 0) {
-            barColor = '#330000';
-        }
+        barColor = (Math.floor(performance.now() / 150) % 2 === 0) ? '#FF3B3B' : '#330000';
     } else if (energy < 60) {
-        barColor = '#FFFF00'; // Amarelo
+        barColor = '#FFD700'; // âmbar
     }
-
     ctx.fillStyle = barColor;
-    const fillWidth = (energy / 100) * barWidth;
-    ctx.fillRect(barX + 2, barY + 2, Math.max(0, fillWidth - 4), barHeight - 4);
+    ctx.fillRect(bx + 2, by + 2, Math.max(0, (energy / 100) * bw - 4), bh - 4);
 }
 
 // ==========================================
-// ADAPTAÇÃO MOBILE E AJUSTE DE ASPECTO
+// RESPONSIVIDADE E INICIALIZAÇÃO
 // ==========================================
 
-function resizeGame() {
-    // A adaptação de CSS usando `aspect-ratio` cuida do redimensionamento do canvas na tela.
-    // No entanto, precisamos assegurar que os eventos de clique sejam precisos e
-    // que o tamanho real do layout do container respeite os limites lógicos.
-    checkTouchDevice();
-}
-
-// ==========================================
-// INICIALIZAÇÃO E BINDINGS DE TELA
-// ==========================================
+function resizeGame() { checkTouchDevice(); }
 
 window.addEventListener('load', () => {
     resizeGame();
     window.addEventListener('resize', resizeGame);
-    
-    // Botão de Iniciar Jogo
+
     document.getElementById('startButton').addEventListener('click', () => {
-        startGame();
+        initAudio(); startGame();
     });
-
-    // Botões de Reiniciar Jogo (Telas GameOver e Win)
     document.getElementById('restartButton').addEventListener('click', () => {
-        restartGame();
+        initAudio(); restartGame();
     });
-
     document.getElementById('winRestartButton').addEventListener('click', () => {
-        restartGame();
+        initAudio(); restartGame();
     });
 });

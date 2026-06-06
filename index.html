@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Megamania Remake</title>
-    <!-- Fonte retro arcade 8-bit -->
+    <title>Star Defender — Megamania Remake</title>
+    <meta name="description" content="Jogo de tiro espacial estilo Star Wars com pixel art 8-bit. Defenda a galáxia!">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
@@ -12,43 +12,47 @@
 </head>
 <body>
     <div id="gameContainer">
-        <!-- Canvas principal do jogo -->
         <canvas id="gameCanvas" width="800" height="600"></canvas>
 
-        <!-- UI: Tela Inicial -->
+        <!-- Tela Inicial -->
         <div id="startScreen" class="overlay">
-            <h1 class="glow-text">MEGAMANIA</h1>
-            <h2 class="glow-text-cyan">REMAKE</h2>
+            <p class="sw-episode">UM LONGO TEMPO ATRÁS,</p>
+            <p class="sw-galaxy">NUMA GALÁXIA MUITO, MUITO DISTANTE...</p>
+            <h1 class="glow-text">STAR</h1>
+            <h1 class="glow-text">DEFENDER</h1>
+            <h2 class="glow-text-blue">MEGAMANIA REMAKE</h2>
             <div class="instructions">
-                <p>Controles (Teclado):</p>
+                <p class="inst-title">— CONTROLES —</p>
                 <ul>
-                    <li><span class="key">←</span> / <span class="key">A</span> : Esquerda</li>
-                    <li><span class="key">→</span> / <span class="key">D</span> : Direita</li>
-                    <li><span class="key">Espaço</span> : Disparar</li>
+                    <li><span class="key">←</span><span class="key">A</span> Esquerda</li>
+                    <li><span class="key">→</span><span class="key">D</span> Direita</li>
+                    <li><span class="key">ESPAÇO</span> Disparar</li>
                 </ul>
-                <p class="mobile-note">Dispositivos móveis: Use o controle tátil virtual abaixo.</p>
+                <p class="mobile-note">📱 Mobile: Use o manche virtual abaixo</p>
             </div>
-            <button id="startButton" class="arcade-button">INICIAR JOGO</button>
+            <button id="startButton" class="arcade-button">QUE A FORÇA ESTEJA COM VOCÊ</button>
         </div>
 
-        <!-- UI: Tela de Game Over -->
+        <!-- Game Over -->
         <div id="gameOverScreen" class="overlay hidden">
-            <h1 class="glow-text-red">FIM DE JOGO</h1>
+            <p class="sw-episode">O LADO SOMBRIO VENCEU...</p>
+            <h1 class="glow-text-red">GAME OVER</h1>
             <p class="final-score-text">PONTOS: <span id="finalScore">0</span></p>
             <p class="final-level-text">NÍVEL ALCANÇADO: <span id="finalLevel">1</span></p>
-            <button id="restartButton" class="arcade-button button-red">JOGAR NOVAMENTE</button>
+            <button id="restartButton" class="arcade-button button-red">TENTAR NOVAMENTE</button>
         </div>
 
-        <!-- UI: Tela de Vitória -->
+        <!-- Vitória -->
         <div id="gameWinScreen" class="overlay hidden">
-            <h1 class="glow-text-gold">PARABÉNS!</h1>
-            <h2 class="glow-text-cyan">VOCÊ DEFENDEU O ESPAÇO</h2>
+            <p class="sw-episode">A REBELIÃO VENCEU!</p>
+            <h1 class="glow-text-gold">VITÓRIA!</h1>
+            <h2 class="glow-text-blue">A GALÁXIA ESTÁ SALVA</h2>
             <p class="final-score-text">PONTOS TOTAIS: <span id="winScore">0</span></p>
             <button id="winRestartButton" class="arcade-button button-gold">JOGAR NOVAMENTE</button>
         </div>
     </div>
 
-    <!-- Controles virtuais na tela para celular/toque (mobile) -->
+    <!-- Controles Mobile -->
     <div id="mobileControls" class="hidden">
         <div class="joystick-container">
             <div id="joystickBase">
@@ -56,11 +60,10 @@
             </div>
         </div>
         <div class="action-btn-container">
-            <button id="btnFire" class="control-btn fire-btn">FOGO</button>
+            <button id="btnFire" class="control-btn fire-btn">🔥</button>
         </div>
     </div>
 
-    <!-- Script de lógica do jogo -->
     <script src="game.js"></script>
 </body>
 </html>
